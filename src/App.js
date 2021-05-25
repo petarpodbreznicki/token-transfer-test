@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import Wallet from '@project-serum/sol-wallet-adapter';
-import { Connection, SystemProgram, Transaction, clusterApiUrl } from '@solana/web3.js';
+import { Connection, SystemProgram, Transaction, clusterApiUrl, PublicKey } from '@solana/web3.js';
+import { createTransferBetweenSplTokenAccountsInstruction, getOwnedTokenAccounts } from './utils/tokens';
+import { parseTokenAccountData } from './utils/tokens/data';
 
 function toHex(buffer) {
   return Array.prototype.map
@@ -51,17 +53,54 @@ function App() {
 
   async function sendTransaction() {
     try {
-      let transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: selectedWallet.publicKey,
-          toPubkey: selectedWallet.publicKey,
-          lamports: 100,
+      // Destination is the Associated Token Account of the receiver.
+      const destinationAddress = new PublicKey('46w2oyWknW7wAJiMWDNEU1maJSYM62vhot11s6shwWw4');
+      // Mint address of the token (random token I made on devnet)
+      const mxMint = new PublicKey('mx3edW3gRoM9J4sJKtuobQW3ZB1HeuZH8hQeH9HDkF3');
+      // Decimals of the token mint
+      const decimals = 4;
+      // Send 1 token
+      const transferAmountString = '1';
+      let amountFix = Math.round(parseFloat(transferAmountString) * 10 ** decimals);
+      // Not sure what this is
+      const memo = null;
+      
+      // We need to get the Associated Token Account of the sender (the wallet).
+      // If they don't have it, this will fail somehow, and the transaction too.
+      const sourceSplTokenAccount = (
+        await getOwnedTokenAccounts(connection, selectedWallet.publicKey)
+      )
+        .map(({ publicKey, accountInfo }) => {
+          console.log(publicKey)
+          return { publicKey, parsed: parseTokenAccountData(accountInfo.data) };
         })
-      );
+        .filter(({ parsed }) => parsed.mint.equals(mxMint))
+        .sort((a, b) => {
+          return b.parsed.amount - a.parsed.amount;
+        })[0];
+
+      let transaction = createTransferBetweenSplTokenAccountsInstruction({
+        ownerPublicKey: selectedWallet.publicKey,
+        mint: mxMint,
+        decimals: 4,
+        sourcePublicKey: sourceSplTokenAccount.publicKey,
+        destinationPublicKey: destinationAddress,
+        amount: amountFix,
+        memo: memo
+      });
+
+      // let transaction = new Transaction().add(
+      //   SystemProgram.transfer({
+      //     fromPubkey: selectedWallet.publicKey,
+      //     toPubkey: selectedWallet.publicKey,
+      //     lamports: 100,
+      //   })
+      // );
       addLog('Getting recent blockhash');
       transaction.recentBlockhash = (
         await connection.getRecentBlockhash()
       ).blockhash;
+      addLog(`Sending ${transferAmountString} of ${mxMint.toString()} to recipient at: ${destinationAddress.toString()}`)
       addLog('Sending signature request to wallet');
       transaction.feePayer = selectedWallet.publicKey;
       let signed = await selectedWallet.signTransaction(transaction);
@@ -104,7 +143,7 @@ function App() {
       {selectedWallet && selectedWallet.connected ? (
         <div>
           <div>Wallet address: {selectedWallet.publicKey.toBase58()}.</div>
-          <button onClick={sendTransaction}>Send Transaction</button>
+          <button onClick={sendTransaction}>Send Token Transaction</button>
           <button onClick={signMessage}>Sign Message</button>
           <button onClick={() => selectedWallet.disconnect()}>Disconnect</button>
         </div>
