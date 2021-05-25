@@ -66,7 +66,8 @@ function App() {
       const memo = null;
       
       // We need to get the Associated Token Account of the sender (the wallet).
-      // If they don't have it, this will fail somehow, and the transaction too.
+      // If they don't have it, this will fail and the transaction too.
+      // It will also fail if they don't have enough balance, but hey, one step at a time.
       const sourceSplTokenAccount = (
         await getOwnedTokenAccounts(connection, selectedWallet.publicKey)
       )
